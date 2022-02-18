@@ -24,6 +24,7 @@
 - Schedule API 假定 Server 資料可能異常，若 Server Response 包含預約的時間於過去，則 UI 層將阻擋用戶選擇過去的時間
 - 事件通知中心以 RxBus & FlowBus 實作
 - 預設語系為en-US，並另外實現 zh-CN, zh-HK, zh-TW
+- 部分實作可再依團隊習慣、實際使用情境或未來使用方式優化
 
 
 其他發現
