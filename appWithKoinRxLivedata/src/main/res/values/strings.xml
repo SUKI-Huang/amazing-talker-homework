@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Homework</string>
+    <string name="view_calendar_timezone_info">* All times listed are in your local timezone: %1$s</string>
+    <string name="view_network_content_unavailable">Oops! something wrong.</string>
+    <string name="view_network_content_retry">Retry</string>
+    <string name="view_network_content_loading">Loading…</string>
+
+</resources>

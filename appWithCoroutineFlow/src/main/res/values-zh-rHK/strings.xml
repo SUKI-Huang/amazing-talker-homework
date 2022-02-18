@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">回家作業</string>
+    <string name="view_calendar_timezone_info">* 時間以 %1$s 顯示</string>
+    <string name="view_network_content_unavailable">糟糕!發生了點問題!</string>
+    <string name="view_network_content_retry">重試</string>
+    <string name="view_network_content_loading">讀取中…</string>
+</resources>
