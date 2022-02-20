@@ -1,6 +1,7 @@
 package com.amazing.mvvm.model.dataSource.schedule
 
 import com.amazing.base.BaseRemoteDataSource
+import com.amazing.extensions.getCalendarStartAt
 import com.amazing.extensions.gmt
 import com.amazing.extensions.plus
 import com.amazing.mvvm.model.data.calendar.CalendarData
@@ -13,20 +14,18 @@ import java.util.concurrent.TimeUnit
 
 class TeacherScheduleRemoteDataSource : BaseRemoteDataSource<CalendarData>() {
 
-    fun load(teacherName: String, _startAt: Date) {
+    fun load(teacherName: String, _startAt: Date? = null) {
         callOnStart()
         if (teacherName.isEmpty()) {
             callOnError(RuntimeException("teacher name can not be empty!"))
             return
         }
-
-        apiInterfaceManager.scheduleApi.getSchedule(constant.getApiTeacherSchedule(teacherName, _startAt.gmt))
-            .map {
-                // simulate the response time. you guys can see how I handle the loading state on view
-                Thread.sleep(500)
-                return@map it
-            }
-            .map { processScheduleDate(it) }
+        apiInterfaceManager.timeApi.get(constant.getApiCurrentTime()).flatMap {
+            val currentDateTime = it.headers().getDate("date") ?: Date(System.currentTimeMillis())
+            val startAt = _startAt ?: currentDateTime.getCalendarStartAt()
+            apiInterfaceManager.scheduleApi.getSchedule(constant.getApiTeacherSchedule(teacherName, startAt.gmt))
+                .map { scheduleData -> processScheduleDate(scheduleData, startAt, currentDateTime) }
+        }
             .subscribeOn(Schedulers.io())
             .unsubscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
@@ -38,7 +37,7 @@ class TeacherScheduleRemoteDataSource : BaseRemoteDataSource<CalendarData>() {
 
     // process complex date data in background thread to get better ui rendering performance
     // process date data here to prevent modified ui logic in the future, and made the ui component easier to understand
-    private fun processScheduleDate(scheduleData: ScheduleData): CalendarData {
+    private fun processScheduleDate(scheduleData: ScheduleData, currentCalendarStartAt: Date, currentDateTime: Date): CalendarData {
 
         val sunday = arrayListOf<CalendarData.Period>()
         val monday = arrayListOf<CalendarData.Period>()
@@ -65,7 +64,9 @@ class TeacherScheduleRemoteDataSource : BaseRemoteDataSource<CalendarData>() {
             // check data is valid
             val startAt = it?.start ?: throw RuntimeException("the 'start' in the available list it null!")
             val endAt = it.end ?: throw RuntimeException("the 'end' in the available list it null!")
-            getCalendarPeriod(startAt, endAt, true)
+            // assume api will response the passed time, avoid user choose passed time, so check it again
+            val isAvailable = currentDateTime.time < startAt.time
+            getCalendarPeriod(startAt, endAt, isAvailable)
         }?.onEach { addCalendarPeriod(it) }
 
         scheduleData.booked?.flatMap {
@@ -83,7 +84,13 @@ class TeacherScheduleRemoteDataSource : BaseRemoteDataSource<CalendarData>() {
         friday.sortBy { it.startAt }
         saturday.sortBy { it.startAt }
 
-        return CalendarData(sunday, monday, tuesday, wednesday, thursday, friday, saturday)
+        val defaultCalendarStartAt = currentDateTime.getCalendarStartAt()
+        var previousCalendarStartAt: Date? = currentCalendarStartAt.plus(-7, TimeUnit.DAYS)
+        val nextCalendarStartAt = currentCalendarStartAt.plus(7, TimeUnit.DAYS)
+        val hasPreviousPage = previousCalendarStartAt!!.time >= defaultCalendarStartAt.time
+        previousCalendarStartAt = if (hasPreviousPage) previousCalendarStartAt else null
+
+        return CalendarData(previousCalendarStartAt, currentCalendarStartAt, nextCalendarStartAt, sunday, monday, tuesday, wednesday, thursday, friday, saturday)
     }
 
     private fun getCalendarPeriod(startAt: Date, endAt: Date, isAvailable: Boolean): List<CalendarData.Period> {

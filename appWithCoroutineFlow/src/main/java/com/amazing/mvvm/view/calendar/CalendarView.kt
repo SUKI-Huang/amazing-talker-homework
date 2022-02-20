@@ -1,6 +1,5 @@
 package com.amazing.mvvm.view.calendar
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Typeface
 import android.util.AttributeSet
@@ -75,8 +74,6 @@ class CalendarView : BaseView<ViewCalendarBinding> {
             }
         }.launchIn(activity!!.lifecycleScope)
 
-        viewModel.currentCalendarStartAtState.filterNotNull().onEach { updateCalendarDateRange(it) }.launchIn(activity!!.lifecycleScope)
-
         viewModel.isPreviousWeekAvailableState.onEach {
             // change go previous button style when previous week available changed
             viewBinding.tvGoPrevious.isClickable = it
@@ -100,11 +97,19 @@ class CalendarView : BaseView<ViewCalendarBinding> {
         viewBinding.tvTimezone.text = context.getString(R.string.view_calendar_timezone_info, TimeZone.getDefault().displayInformation)
     }
 
-    @SuppressLint("SetTextI18n")
-    private fun updateCalendarDateRange(startAt: Date) {
+    private fun processStart() {
+        viewBinding.networkContentView.showProgress()
+        viewBinding.llContent.alpha = 0.2F
+    }
+
+    private fun processSuccess(calendarData: CalendarData) {
+        viewBinding.networkContentView.showContent()
+        viewBinding.llContent.alpha = 1F
+
         val dateFormat = SimpleDateFormat("yyyy/MM/dd", Locale.ENGLISH)
+        val startAt = calendarData.currentCalendarStartAt
         val endAt = startAt.plus(6, TimeUnit.DAYS)
-        val startAtText = dateFormat.format(startAt)
+        val startAtText = dateFormat.format(calendarData.currentCalendarStartAt)
         val endAtText = dateFormat.format(endAt)
         viewBinding.tvDateRange.text = "$startAtText - $endAtText"
         viewBinding.tvSundayNumber.text = Calendar.getInstance().apply { time = startAt }.get(Calendar.DAY_OF_MONTH).toString()
@@ -114,16 +119,6 @@ class CalendarView : BaseView<ViewCalendarBinding> {
         viewBinding.tvThursdayNumber.text = Calendar.getInstance().apply { time = startAt.plus(4, TimeUnit.DAYS) }.get(Calendar.DAY_OF_MONTH).toString()
         viewBinding.tvFridayNumber.text = Calendar.getInstance().apply { time = startAt.plus(5, TimeUnit.DAYS) }.get(Calendar.DAY_OF_MONTH).toString()
         viewBinding.tvSaturdayNumber.text = Calendar.getInstance().apply { time = endAt }.get(Calendar.DAY_OF_MONTH).toString()
-    }
-
-    private fun processStart() {
-        viewBinding.networkContentView.showProgress()
-        viewBinding.llContent.alpha = 0.2F
-    }
-
-    private fun processSuccess(calendarData: CalendarData) {
-        viewBinding.networkContentView.showContent()
-        viewBinding.llContent.alpha = 1F
 
         // clear period views on container
         // (use the old view on container is better, but I don't really have to much time on this homework； Life is hard you know )
@@ -144,15 +139,13 @@ class CalendarView : BaseView<ViewCalendarBinding> {
         calendarData.saturday.onEach { viewBinding.llSaturdayPeriodContainer.addView(createPeriodView(it), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)) }
 
         // if startAt from server response is passed, do not allow user access earlier time
-        // for the safety, protect it again on ui layer
-        val currentTime = viewModel.getCurrentDateTime()
-        val isSundayAvailable = calendarData.isSundayAvailable(currentTime)
-        val isMondayAvailable = calendarData.isMondayAvailable(currentTime)
-        val isTuesdayAvailable = calendarData.isTuesdayAvailable(currentTime)
-        val isWednesdayAvailable = calendarData.isWednesdayAvailable(currentTime)
-        val isThursdayAvailable = calendarData.isThursdayAvailable(currentTime)
-        val isFridayAvailable = calendarData.isFridayAvailable(currentTime)
-        val isSaturdayAvailable = calendarData.isSaturdayAvailable(currentTime)
+        val isSundayAvailable = calendarData.isSundayAvailable()
+        val isMondayAvailable = calendarData.isMondayAvailable()
+        val isTuesdayAvailable = calendarData.isTuesdayAvailable()
+        val isWednesdayAvailable = calendarData.isWednesdayAvailable()
+        val isThursdayAvailable = calendarData.isThursdayAvailable()
+        val isFridayAvailable = calendarData.isFridayAvailable()
+        val isSaturdayAvailable = calendarData.isSaturdayAvailable()
 
         // update bar (can be optimized, If needed)
         viewBinding.vSundayBar.background = ContextCompat.getDrawable(context, if (isSundayAvailable) R.drawable.background_calendar_day_bar_available else R.drawable.background_calendar_day_bar_unavailable)
@@ -190,15 +183,13 @@ class CalendarView : BaseView<ViewCalendarBinding> {
     private fun createPeriodView(period: CalendarData.Period): View {
         // if startAt from server response is passed, do not allow user access earlier time
         // for the safety, protect it again on ui layer
-        val currentTime = viewModel.getCurrentDateTime()
-        val isAvailable = period.isDisplayAvailable(currentTime)
         val binding = ViewPeriodBinding.inflate(LayoutInflater.from(context))
-        binding.tvTime.setTextColor(ContextCompat.getColor(context, if (isAvailable) R.color.calendar_view_period_text_available else R.color.calendar_view_period_text_unavailable))
+        binding.tvTime.setTextColor(ContextCompat.getColor(context, if (period.isAvailable) R.color.calendar_view_period_text_available else R.color.calendar_view_period_text_unavailable))
         binding.tvTime.text = period.displayTime
-        if (isAvailable) binding.tvTime.setTypeface(null, Typeface.BOLD)
+        if (period.isAvailable) binding.tvTime.setTypeface(null, Typeface.BOLD)
         binding.tvTime.setOnClickListener {
             activity?.lifecycleScope?.launch {
-                clickShareFlow.emit { onPeriodClickListener?.invoke(isAvailable, period.startAt, period.endAt) }
+                clickShareFlow.emit { onPeriodClickListener?.invoke(period.isAvailable, period.startAt, period.endAt) }
             }
         }
         return binding.root

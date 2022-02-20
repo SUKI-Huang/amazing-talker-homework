@@ -22,5 +22,5 @@ class TeacherScheduleRepository {
     // flow is different from livedata, it need a default value, so make the default value as null, and the RequestState here is nullable
     val teacherScheduleRequestState by lazy { MutableStateFlow<RequestState<CalendarData>?>(null) }
 
-    fun loadTeacherSchedule(teacherName: String, startAt: Date) = teacherScheduleRemoteDataSource.load(teacherName, startAt)
+    fun loadTeacherSchedule(teacherName: String, startAt: Date? = null) = teacherScheduleRemoteDataSource.load(teacherName, startAt)
 }

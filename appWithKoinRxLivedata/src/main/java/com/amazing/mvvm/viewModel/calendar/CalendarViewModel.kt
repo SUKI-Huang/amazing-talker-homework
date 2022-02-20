@@ -1,35 +1,24 @@
 package com.amazing.mvvm.viewModel.calendar
 
 import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Transformations
 import com.amazing.base.BaseViewModel
 import com.amazing.base.toLiveData
-import com.amazing.extensions.getCalendarStartAt
-import com.amazing.extensions.plus
 import com.amazing.module.network.component.RequestState
 import com.amazing.mvvm.model.data.calendar.CalendarData
 import com.amazing.mvvm.model.repository.schedule.TeacherScheduleRepository
-import com.amazing.mvvm.model.repository.time.CurrentTimeRepository
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.kotlin.subscribeBy
+import io.reactivex.rxjava3.schedulers.Schedulers
 import org.koin.core.component.inject
-import java.util.*
-import java.util.concurrent.TimeUnit
 
 class CalendarViewModel : BaseViewModel() {
-    private val currentTimeRepository: CurrentTimeRepository by inject()
-    private val teacherScheduleRepository: TeacherScheduleRepository by inject()
-    private var previousCalendarStartAt: Date? = null
-    private var nextCalendarStartAt: Date? = null
-    private var defaultCalendarStartAt: Date? = null
-    private var currentDateTime: Date? = null
-    private var teacherName: String? = null
 
-    private val _currentCalendarStartAtStateLiveData = MutableLiveData<Date>()
-    val currentCalendarStartAtStateLiveData: LiveData<Date> = _currentCalendarStartAtStateLiveData
+    private val teacherScheduleRepository: TeacherScheduleRepository by inject()
+    private var teacherName: String? = null
+    private var calendarData: CalendarData? = null
     val teacherScheduleRequestStateLiveData: LiveData<RequestState<CalendarData>> by lazy { teacherScheduleRepository.teacherScheduleRequestState.toLiveData(compositeDisposable) }
-    val isPreviousWeekAvailableStateLiveData: LiveData<Boolean> = Transformations.map(_currentCalendarStartAtStateLiveData) { it.plus(-7, TimeUnit.DAYS).time >= defaultCalendarStartAt!!.time }
+    val isPreviousWeekAvailableStateLiveData: LiveData<Boolean> = Transformations.map(teacherScheduleRequestStateLiveData) { (it as? RequestState.OnSuccess<CalendarData>)?.data?.previousCalendarStartAt != null }
 
     init {
         initCurrentDateTime()
@@ -37,22 +26,14 @@ class CalendarViewModel : BaseViewModel() {
 
     private fun initCurrentDateTime() {
         addDisposable(
-            currentTimeRepository.currentTimeRequestState
-                .filter { it is RequestState.OnSuccess<Date> }
-                .map { it as RequestState.OnSuccess<Date> }
-                .map { it.data }
+            teacherScheduleRepository.teacherScheduleRequestState
+                .filter { it is RequestState.OnSuccess<CalendarData> }
+                .map { (it as RequestState.OnSuccess<CalendarData>).data }
+                .subscribeOn(Schedulers.io())
+                .unsubscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribeBy(
-                    onNext = {
-                        val currentDateTime = it
-                        val currentCalendarStartAt = currentDateTime.getCalendarStartAt()
-                        this.currentDateTime = currentDateTime
-                        this.defaultCalendarStartAt = currentCalendarStartAt
-                        _currentCalendarStartAtStateLiveData.postValue(currentCalendarStartAt)
-                        previousCalendarStartAt = currentCalendarStartAt.plus(-7, TimeUnit.DAYS)
-                        nextCalendarStartAt = currentCalendarStartAt.plus(-7, TimeUnit.DAYS)
-                        if (teacherName != null) setTeacher(teacherName!!)
-                    },
+                    onNext = { this.calendarData = it },
                     onError = { /* it will crash while onError not set and occur exception at sametime*/ }
                 )
         )
@@ -62,44 +43,25 @@ class CalendarViewModel : BaseViewModel() {
         // prevent abuse, just return or throw exception
         if (teacherName.isEmpty()) return
         this.teacherName = teacherName
-        val currentDateTime = this.currentDateTime
-        val defaultCalendarStartAt = this.defaultCalendarStartAt
-        if (currentDateTime == null || defaultCalendarStartAt == null) {
-            currentTimeRepository.loadCurrentDateTime()
-        } else {
-            previousCalendarStartAt = defaultCalendarStartAt.plus(-7, TimeUnit.DAYS)
-            nextCalendarStartAt = defaultCalendarStartAt.plus(7, TimeUnit.DAYS)
-            _currentCalendarStartAtStateLiveData.postValue(defaultCalendarStartAt)
-            teacherScheduleRepository.loadTeacherSchedule(teacherName, defaultCalendarStartAt)
-        }
+        teacherScheduleRepository.loadTeacherSchedule(teacherName)
     }
 
     fun goNextWeek() {
-        val teacherName = this.teacherName ?: return
-        val nextCalendarStartAt = nextCalendarStartAt ?: return
-        this.previousCalendarStartAt = nextCalendarStartAt.plus(-7, TimeUnit.DAYS)
-        this.nextCalendarStartAt = nextCalendarStartAt.plus(7, TimeUnit.DAYS)
-        _currentCalendarStartAtStateLiveData.postValue(nextCalendarStartAt)
-        teacherScheduleRepository.loadTeacherSchedule(teacherName, nextCalendarStartAt)
+        val calendarData = calendarData ?: return
+        val teacherName = teacherName ?: return
+        teacherScheduleRepository.loadTeacherSchedule(teacherName, calendarData.nextCalendarStartAt)
     }
 
     fun goPreviousWeek() {
-        val teacherName = this.teacherName ?: return
-        val previousCalendarStartAt = previousCalendarStartAt ?: return
-        val defaultCalendarStartAt = defaultCalendarStartAt ?: return
-        val canGoPrevious = previousCalendarStartAt >= defaultCalendarStartAt
-        if (!canGoPrevious) return
-        this.previousCalendarStartAt = previousCalendarStartAt.plus(-7, TimeUnit.DAYS)
-        this.nextCalendarStartAt = previousCalendarStartAt.plus(7, TimeUnit.DAYS)
-        _currentCalendarStartAtStateLiveData.postValue(previousCalendarStartAt)
+        val calendarData = calendarData ?: return
+        val teacherName = teacherName ?: return
+        val previousCalendarStartAt = calendarData.previousCalendarStartAt ?: return
         teacherScheduleRepository.loadTeacherSchedule(teacherName, previousCalendarStartAt)
     }
 
     fun retry() {
-        val teacherName = this.teacherName ?: return
-        val currentCalendarStartAt = _currentCalendarStartAtStateLiveData.value ?: return
+        val teacherName = teacherName ?: return
+        val currentCalendarStartAt = calendarData?.currentCalendarStartAt
         teacherScheduleRepository.loadTeacherSchedule(teacherName, currentCalendarStartAt)
     }
-
-    fun getCurrentDateTime() = currentDateTime!!
 }

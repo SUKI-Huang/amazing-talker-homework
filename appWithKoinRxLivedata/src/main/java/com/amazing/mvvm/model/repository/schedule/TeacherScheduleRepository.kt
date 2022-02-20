@@ -21,5 +21,5 @@ class TeacherScheduleRepository {
 
     val teacherScheduleRequestState by lazy<PublishSubject<RequestState<CalendarData>>> { PublishSubject.create() }
 
-    fun loadTeacherSchedule(teacherName: String, startAt: Date) = teacherScheduleRemoteDataSource.load(teacherName, startAt)
+    fun loadTeacherSchedule(teacherName: String, startAt: Date? = null) = teacherScheduleRemoteDataSource.load(teacherName, startAt)
 }
